@@ -11,88 +11,114 @@
 - Independent authority to manage transactions
 - User brokers
 - Provider brokers
-- Meta brokers which can create double auctions when needed, and gain a cut
+- Meta brokers which can create double auctions when needed
 
 ## Compute commodities
 
-In this market, there needs to be some definition of commodities - which are fixed specifications of computation, such that they can be traded in an open market (you will be getting the same product regardless of where you trade it).
+In this market, there needs to be some definition of commodities - which are fixed specifications of computation such that they can be traded in an open market (you will be getting the same product regardless of where you trade it).
 
-The commodities would need to defined in a "SLA". This definition would specify certain conditions that have to be delivered (i.e. providers need to provide this) and a formula for determining the cost that is charged to the user,
-(look at this http://www.gridway.org/doku.php?id=documentation:release_5.14:ug#requirement_and_rank_variables)
+The commodities would need to defined in some kind of data structure. This specifies the requirements that the user should expect at the end of the computation (e.g. that it's allowed to run for a specified period), requirements of the provider (e.g. for some kinds of contracts that the input files are in a certain files) and the mechanism for working out the cost.
 
-Variables that could be provided to the requirements and cost formulas.
-
-## Things that need to be interpreted from the commodity definition files:
+### Things that need to be inferred from the commodity declaration
 
 1. Whether your system is able to provide the resource
-To do this:
-- Run system_check to get the correct system variables
-- Check any clauses that use variables defined here are correct
 2. The amount to charge the user, at the end of the contract
-- Evaluate the cost with the given parameters
 3. Whether a given contract is suitable for a given job
-- See if provider_requirements evaluates correctly for a given job
 4. Whether one commodity which is suitable is likely to cost more or less than another commodity
 
-Commodities parameters:
+### Commodity specification
 
-- `system_check`: `Filename | CheckStruct`
-    A python script such that `evaluate()[0] == True`. The discovery service could keep copies of these files as a standard of different environments (e.g. you could have a windows environment)
-- `input_check`: `Filename | CheckStruct`
-    A python script that evaluates to true if . The discovery service could keep copies of these files as a standard of different environments (e.g. you could have a windows environment) 
-- `user_requirements`: `Predicates`
-    A list of boolean expressions that all need to be true, in order for the contract to be considered to be fulfilled.
-- `cost`: `Expression`
+#### Parameters
+
+- `user_requirements`: `Predicate[]`
+    A list of boolean expressions with variables assignments that should evaluate to true at the end of contract. The provider shouldn't take on a contract if they can't fulfil this at the beginning of the contract (e.g. providers need to check if they can fulfil the system check at the beginning of the contract)
+- `provider_requirements`: `Predicate[]`
+    A list of boolean expressions with variables assignments that should evaluate to true at the begin of contract, in order for providers to accept the contract.
+- `evaluate_provider_script`: `ScriptDesc`
+    A description of a python script which will provide extra variables for the `user_requirements` and `cost` section. This script should evaluate to the same value regardless of when it's evaluated. The script is evaluated through the `evaluate` function and should finish by 10 seconds.
+- `evaluate_inputs_script`: `ScriptDesc`
+    A description of a python script which will provide extra variables for the `provider_requirements` section. The script is evaluated through evaluating `evaluate(input: string)`, where `input` is the command used to run the job. The input files should also be in the file system at the time of running. This also should be expected to finish by 10 seconds.
+- `cost`: `IfExpression`
     An expression that is evaluated at the end of the computation that specifies the cost of the computation. If the user requirements have been fulfilled correctly, then this amount is withdrawn out of the user's account.
-- `provider_data`: `Parameter[]`
-    Parameters that are specified by the provider at the end of the contract, that can be used in the cost field, and have to be fulfilled by the user requirements. Past values of this can be revealed to users.
-- `depends_on`: `number`
-    You can only buy this resource if you have bought this previous resource
 
-Variables:
+#### Variables
 
-- `end_time`: `Timestamp`
-    The time at which the job finishes (as a result of the user or provider killing the task)
-- `starting_time`: `Timestamp`
-    The time at which the job starts running
-- `deal_time`: `Timestamp`
-    The time at which the deal is agreed
+- `waiting_time`: `Duration`
+    The duration from when the 
+- `running_time`: `Duration`
+    The duration 
 - `killed_by`: `"user" | "provider"`
     The entity that kills the job.
 - `can_rebuy`: `boolean`
     Whether you can rebuy this commodity to keep your instance active
-- `times_rebought`: `(number, >0)`
+- `times_rebought`: `number>0`
     Number of times you have bought this resource before
 
-Where `Timestamp` is a timestamp, in UNIX time.
+#### Types
 
-Example definitions:
+- enum types as `"item1" | "item2" | "item3"`
+- `boolean` and `number` as expected
+- `Predicate`: a list of predicates separated by new lines. Predicates can use the operators `<`, `>`, `=`, `or` and `and`, between expressions.
+- `IfExpressions`: Expressions, which can be nested in `if`, `else` blocks
+- `Expressions`: Supports `+-*` with brackets and function calls in the expected way
+- `Duration` is an interval, measured in seconds
+
+#### Functions
+
+- `round_down`: `(number, number) -> number`
+    Rounds a number down in a specified interval
+- `round_up`: `(number, number) -> number`
+    Rounds a number up in a specified interval
+- `min`: `(number, number) -> number`
+    Finds the minimum of two numbers
+- `min`: `(number, number) -> number`
+    Finds the maximum of two numbers
+
+
+### Example definitions:
 
 Fixed time commodity:
 ```yml
-system_check: correct_system.py
-user_requirements: 
-    - end_time - starting_time > 3600 or killed_by = "user"
-    - starting_time - deal_time < 30
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    correct
+    running_time > 3600 or killed_by = "user"
+    waiting_time < 30
+'''
 cost: 1.5
 ```
 
 Fixed time single/double auction:
 ```yml
-system_check: correct_system.py
-user_requirements: 
-    - end_time - starting_time > 3600 or killed_by = "user"
-    - starting_time - deal_time < 30
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    correct
+    running_time > 3600 or killed_by = "user"
+    waiting_time < 30
+'''
 cost: bid_price
 ```
 
 Auction where you can claim back unused time:
-
 ```yml
-system_check: correct_system.py
-user_requirements: 
-    - end_time - starting_time > 3600 or killed_by = "user"
-    - starting_time - deal_time < 30
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    correct
+    running_time > 3600 or killed_by = "user"
+    waiting_time < 30
+'''
 cost: '''
     if (killed_by = "user"){
         bid_price - (end_time - starting_time - 3600) * 0.0036 * 2
@@ -100,30 +126,43 @@ cost: '''
 '''
 ```
 
-Auction where you think you can guess the time taken for something to execute:
+Auction where the provider thinks it can guess the time taken for something to execute:
 ```yml
-user_check: is_correct_file
+evaluate_inputs_script:
+    file: correct_input.py
+    outputs:
+        - name: correct
+          type: boolean
+provider_requirements: '''
+    correct
+'''
 user_requirements: '''
     killed_by = "user"
+    waiting_time + running_time < 3600
 '''
 cost: '''
     file_length * bid_price
 '''
 ```
 
-Amazon services:
+#### Amazon services:
 
 Amazon spot pricing:
 ```yml
-system_check: correct_system.py
-provider_data:
-    average_spot_price: 
-        type: number
-        last_advertised: 10
-user_requirements:
-    - average_spot_price < bid_price
-    - end_time - deal_time > 3600 or killed_by = "user"
-    - can_rebuy
+get_provider_data:
+    - name: average_spot_price
+      type: number
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    correct
+    average_spot_price < bid_price
+    end_time - deal_time > 3600 or killed_by = "user"
+    can_rebuy
+'''
 cost: '''
     if (killed_by = "provider"){
         round_down(active_time * average_spot_price, 3600)
@@ -144,9 +183,14 @@ cost: 340
 ```
 
 ```yml
-system_check: correct_system.py
 depends_on: 123
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
 user_requirements: '''
+    correct
     end_time - starting_time > 60*60*24*365 or killed_by = "user"
     starting_time - deal_time < 30
 '''
@@ -161,9 +205,14 @@ cost: 180
 ```
 
 ```yml
-system_check: correct_system.py
 depends_on: 321
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
 user_requirements: '''
+    correct
     end_time - starting_time > 60*60*30 or killed_by = "user"
     starting_time - deal_time < 30
     can_rebuy
@@ -172,81 +221,52 @@ user_requirements: '''
 cost: 0.04
 ```
 
-This language has comparison operators `<`, `>`, `=`; logical comparison operators `and` and `or` and `not`; maths operators `+-*/`; and a function `$(...)` which execute and returns the stdout of a command run in a docker container with the input file in the filesystem. In auctions, a variable called `bid_price` can be used, which contains the bid price at the end of the auction.
-
-On a deal, this contract is fed into an independent service which will arbitrate the contract. After the computation has been finished, both the user and provider would give what they think they parameters should be. If they agree to a acceptable degree (i.e. the end cost doesn't differ) by a great amount, the user is charged the average of the two amounts.
-
-## Specifying auctions
-
-Two way auction:
-
-This is when after a period of time, the 
-```yml
-commodity: <commodity>
-deal_times: "<timestamp>+2000"
-```
-
 ## Discovery Service
 
-To discover providers that can fulfil a user's job, the user broker can query a discovery server that will return a list of available providers that can be connected to. This would contain parameters as to what the user wants to be queried e.g.:
-```json
-{
-    "request": "query_providers",
-    "query": 123456
+The discovery service finds providers for the user to connect with. It can either query specific commodities or query all possible providers:
+```yml
+request: query_providers
+query: 123456
 }
 ```
 
-The response would be a list of servers that the user could connect, with the protocols that the client need to connect to them. Also, information about their usage (to help the provider determine the best server to go with) is provided. This may include parameters like amount of clients connecting, time to connect. An example response would be:
-```json
-{
-    "status": "ok",
-    "resources": [
-        {
-            "id": 10,
-            "location": "0.0.0.0",
-            "type": "double_auction",
-            "parameters": "..."
-        },
-        {
-            "id": 10,
-            "location": "0.0.0.0",
-            "type": "auction",
-            "parameters": "..."
-        },
-        {
-            "id": 13,
-            "location": "1.0.0.0",
-            "type": "commodity",
-            "parameters": "..."
-        }
-    ]
-}
+or
+
+```yml
+request: query_all
+```
+
+The response would be a list of servers that the user could connect, with the protocols that the client need to connect to them
+```yml
+status: ok
+resources:
+- id: 10
+  location: 0.0.0.0
+  type: double_auction
+  commodity: "..."
+- id: 11
+  location: 0.0.0.0
+  type: auction
+  commodity: "..."
+- id: 12
+  location: 1.0.0.0
+  type: direct
+  commodity: "..."
 ```
 
 Providers would also update the discovery server with updated stats about new expected pricing, minimum time to acquire the resource and types of resources that they accept e.g.
-```json
-{
-    "request": "update_information",
-    "provider_id": 4,
-    "signature": "...",
-    "new_information": [
-        {
-            "id": 13,
-            "location": "1.1.0.0",
-            "type": "commodity",
-            "parameters": {
-                "SLA": "...",
-                "auction_interval": 1000
-            }
-        }
-    ]
-}
+```yml
+request: update_information
+provider_id: 4
+signature: "..."
+new_information:
+- id: 13
+  location: 1.1.0.0
+  type: direct
+  commodity: "..."
 ```
 
 Where `new_information` would contain information to be merged into the discovery server's information.
-
-## Communication between users and providers
-
 
 ## Central bank
 
@@ -269,6 +289,15 @@ Providers have many ways of giving their resources to users
 
 The provider may also look to see if there are ways of creating commodities if it thinks it can predict the time taken for a given resource to be processed and try to find quicker ways of processing the data (e.g. maybe cache data, if this is a popular request)
 
-## Implementation details
+## Specifying auctions
 
-The discovery and central bank servers can all be restful servers. Once a provider has been found, the interaction between the provider broker and the user broker could be implemented over a secure TCP connection
+Two way auction:
+
+```yml
+commodity: "<commodity>"
+deal_times: "<timestamp>+2000"
+```
+
+## Specifying jobs
+
+To give a job to the provider, you need to specify a command on the command line and input files which would be read.
