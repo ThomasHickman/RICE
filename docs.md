@@ -44,9 +44,9 @@ The commodities would need to defined in some kind of data structure. This speci
 #### Variables
 
 - `waiting_time`: `Duration`
-    The duration from when the 
+    The duration from when the deal is completed to when the computation starts
 - `running_time`: `Duration`
-    The duration 
+    The duration from the start of the computation and when it is killed
 - `killed_by`: `"user" | "provider"`
     The entity that kills the job.
 - `can_rebuy`: `boolean`
@@ -58,7 +58,7 @@ The commodities would need to defined in some kind of data structure. This speci
 
 - enum types as `"item1" | "item2" | "item3"`
 - `boolean` and `number` as expected
-- `Predicate`: a list of predicates separated by new lines. Predicates can use the operators `<`, `>`, `=`, `or` and `and`, between expressions.
+- `Predicate`: a list of predicates separated by new lines. Predicates can use the operators `<`, `>`, `is`, `or` and `and`, between expressions.
 - `IfExpressions`: Expressions, which can be nested in `if`, `else` blocks
 - `Expressions`: Supports `+-*` with brackets and function calls in the expected way
 - `Duration` is an interval, measured in seconds
@@ -86,7 +86,7 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    running_time > 3600 or killed_by = "user"
+    running_time > 3600 or killed_by is "user"
     waiting_time < 30
 '''
 cost: 1.5
@@ -101,7 +101,7 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    running_time > 3600 or killed_by = "user"
+    running_time > 3600 or killed_by is "user"
     waiting_time < 30
 '''
 cost: bid_price
@@ -116,13 +116,12 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    running_time > 3600 or killed_by = "user"
+    running_time > 3600 or killed_by is "user"
     waiting_time < 30
 '''
 cost: '''
-    if (killed_by = "user"){
+    if (killed_by = "user")
         bid_price - (end_time - starting_time - 3600) * 0.0036 * 2
-    }
 '''
 ```
 
@@ -160,16 +159,14 @@ evaluate_provider_script:
 user_requirements: '''
     correct
     average_spot_price < bid_price
-    end_time - deal_time > 3600 or killed_by = "user"
+    waiting_time + running_time > 3600 or killed_by is "user"
     can_rebuy
 '''
 cost: '''
-    if (killed_by = "provider"){
-        round_down(active_time * average_spot_price, 3600)
-    }
-    else{
+    if (killed_by = "provider")
+        0
+    else
         active_time * average_spot_price
-    }
 '''
 ```
 
@@ -191,8 +188,8 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    end_time - starting_time > 60*60*24*365 or killed_by = "user"
-    starting_time - deal_time < 30
+    running_time > 60*60*24*365 or killed_by = "user"
+    waiting_time < 30
 '''
 cost: 0
 ```
@@ -213,8 +210,8 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    end_time - starting_time > 60*60*30 or killed_by = "user"
-    starting_time - deal_time < 30
+    running_time > 60*60*30 or killed_by = "user"
+    waiting_time < 30
     can_rebuy
     times_rebought < 12
 '''
