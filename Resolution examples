@@ -1,0 +1,64 @@
+correct
+running_time > 3600 => killed_by is "provider"
+waiting_time < 30
+killed_by is "user"
+correct => running_time = 1200
+running_time > 3600 <=> not running_time = 1200
+
+===>>
+
+correct
+not running_time > 3600 or killed_by is "provider"
+waiting_time < 30
+not correct or running_time = 1200
+not running_time > 3600 or not running_time = 1200
+running_time > 3600 or running_time = 1200
+killed_by = "user" or killed_by = "provider"
+not killed_by = "user" or not killed_by = "provider"
+implies
+killed_by is "user"
+
+===>>
+
+not running_time > 3600 or killed_by is "provider"
+waiting_time < 30
+running_time = 1200
+not running_time > 3600
+killed_by = "user" or killed_by = "provider"
+not killed_by = "user" or not killed_by = "provider"
+implies
+killed_by is "user"
+
+===>>
+
+not running_time > 3600 or killed_by is "provider"
+waiting_time < 30
+not running_time > 3600
+running_time > 3600 or running_time = 1200
+killed_by = "user" <=> not killed_by = "provider"
+implies
+killed_by is "user"
+
+---------------------------
+
+correct
+spot_price < bid_price
+running_time < 30 <=> killed_by is "provider"
+can_rebuy
+
+
+running_time = 1200
+
+===>>
+
+correct
+spot_price < bid_price
+running_time > 30 or killed_by is "user"
+can_rebuy
+
+average_spot_price
+
+---------------------------
+
+killed_by is "user"
+waiting_time + running_time < 3600

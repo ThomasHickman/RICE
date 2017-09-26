@@ -1,0 +1,10 @@
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements:
+    - correct
+    - running_time > 3600 <=> killed_by is "provider"
+    - waiting_time < 30
+cost: 1.5

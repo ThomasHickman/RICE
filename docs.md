@@ -31,7 +31,7 @@ The commodities would need to defined in some kind of data structure. This speci
 #### Parameters
 
 - `user_requirements`: `Predicate[]`
-    A list of boolean expressions with variables assignments that should evaluate to true at the end of contract. The provider shouldn't take on a contract if they can't fulfil this at the beginning of the contract (e.g. providers need to check if they can fulfil the system check at the beginning of the contract)
+    A list of boolean expressions with variables assignments that should evaluate to true at the end of contract. The provider shouldn't take on a contract if they can't fulfil this at the beginning of the contract
 - `provider_requirements`: `Predicate[]`
     A list of boolean expressions with variables assignments that should evaluate to true at the begin of contract, in order for providers to accept the contract.
 - `evaluate_provider_script`: `ScriptDesc`
@@ -107,6 +107,39 @@ user_requirements: '''
 cost: bid_price
 ```
 
+Fixed price commodity, where at the cost of giving the user money, the provider can end the computation early
+```yml
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    correct
+    waiting_time < 30
+'''
+cost: '''
+    if (running_time < 300 and killed_by is "provider")
+        -5 * (running_time / 300)
+    else
+        3
+'''
+```
+
+```yml
+evaluate_provider_script:
+    file: correct_system.py
+    outputs:
+        - name: correct
+          type: boolean
+user_requirements: '''
+    is_killed_by = "provider"
+'''
+cost: '''
+    -5000
+'''
+```
+
 Auction where you can claim back unused time:
 ```yml
 evaluate_provider_script:
@@ -149,7 +182,7 @@ cost: '''
 Amazon spot pricing:
 ```yml
 get_provider_data:
-    - name: average_spot_price
+    - name: spot_price
       type: number
 evaluate_provider_script:
     file: correct_system.py
@@ -158,15 +191,12 @@ evaluate_provider_script:
           type: boolean
 user_requirements: '''
     correct
-    average_spot_price < bid_price
-    waiting_time + running_time > 3600 or killed_by is "user"
+    spot_price < bid_price
+    running_time is 30 => killed_by is "provider"
     can_rebuy
 '''
 cost: '''
-    if (killed_by = "provider")
-        0
-    else
-        active_time * average_spot_price
+    running_time * spot_price
 '''
 ```
 
@@ -224,7 +254,6 @@ The discovery service finds providers for the user to connect with. It can eithe
 ```yml
 request: query_providers
 query: 123456
-}
 ```
 
 or
@@ -264,6 +293,21 @@ new_information:
 ```
 
 Where `new_information` would contain information to be merged into the discovery server's information.
+
+## User inference
+
+The user's goals should be:
+
+- `killed_by = "user"`
+- Obtain an acceptable time for computation: `deal_point + waiting_time + active_time`
+- Minimize `cost`
+
+The user broker would collect some rules that would allow resolution on the rules. If the resolution succeeds, then the preconditions succeed. The user broker could either work on the condition that the computation must succeed, or could see what happens it if is terminated and query how much profit could be earned (and maybe how long it would take to execute).
+
+- `killed_by = "user" <=> not killed_by = "provider"`
+- `system_config_correct => running_time = 1200`
+
+Complementary expressions involving less than and greater than would need to resolved relative to each other and a rule would need to be added for them.
 
 ## Central bank
 

@@ -1,0 +1,23 @@
+{
+    "get_provider_data": [
+      {
+        "name": "spot_price",
+        "type": "number"
+      }
+    ],
+    "evaluate_provider_script": {
+      "file": "correct_system.py",
+      "outputs": [
+        {
+          "name": "correct",
+          "type": "boolean"
+        }
+      ]
+    },
+    "user_requirements": [
+        "correct spot_price < bid_price", 
+        "running_time is 30 => killed_by is \"provider\"",
+        "can_rebuy"
+    ],
+    "cost": "running_time * spot_price"
+  }
