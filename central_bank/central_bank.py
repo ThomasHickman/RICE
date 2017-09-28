@@ -1,14 +1,35 @@
-import sqlite3
-import requests
+"""A central bank for managing scheduling resources"""
+
 import json
-import asyncio
-from bottle import default_app, route, get, post, run, request, debug
-import os
+from contextlib import contextmanager
+from abc import abstractmethod, ABCMeta
+
+from bottle import default_app, route, get, post, run, request, debug, HTTPResponse
+from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 from jsonschema import validate, ValidationError
 
 debug(True)
 
-database_path = "database.db"
+Base = declarative_base()
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True)
+    balence = Column(Integer, nullable=False)
+
+
+class Record(Base):
+    __tablename__ = "records"
+
+    id = Column(Integer, primary_key=True)
+    from_id = Column(Integer, nullable=False)
+    to_id = Column(Integer, nullable=False)
+    amount = Column(Integer, nullable=False)
 
 
 def error_if_none(value, error_mes):
@@ -18,53 +39,87 @@ def error_if_none(value, error_mes):
     return value
 
 
-class InsufficientFunds(Exception):
-    pass
+class BankError(Exception):
+    __metaclass__ = ABCMeta
+
+    def get_error_object(self):
+        return {
+            "status": "InvalidAccountUUID",
+            "error_message": self.args[0]
+        }
+
+
+class InsufficientFunds(BankError):
+    def get_error_object(self):
+        return {
+            "status": "InsufficientFunds",
+            "error_message": "Insufficient Funds"
+        }
+
+
+class InvalidAccountUUID(BankError):
+    def __init__(self, invalid_uuid):
+        self.invalid_uuid = invalid_uuid
+        super().__init__(f"{invalid_uuid} is not a valid accout UUID")
+
+    def get_error_object(self):
+        return {
+            "status": "InvalidAccountUUID",
+            "error_message": self.args[0]
+        }
 
 
 class Bank:
     def __init__(self):
-        if not os.path.exists(database_path):
-            self.conn = self.create_database()
-        else:
-            self.conn = sqlite3.connect(database_path)
+        self.engine = create_engine("sqlite:///sqlalchemy_example.db")
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker()
+        self.Session.configure(bind=self.engine)
 
-    def create_database(self):
-        with open("create_database.sql", "r") as sql_file:
-            init_db_code = sql_file.read()
+    @contextmanager
+    def session_scope(self):
+        """Provide a transactional scope around a series of operations."""
+        session = self.Session()
+        try:
+            yield session
+            session.commit()
+        except:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
-        conn = sqlite3.connect(database_path)
-        cursor = self.conn.cursor()
-        cursor.execute(init_db_code)
-        cursor.close()
+    def _alter_account(self, account_id, amount, session):
+        account = session.query(Account).filter_by(id=account_id).first() # type: Account
+        error_mes = f"Account '{account_id}' doesn't exist"
 
-        return conn
-
-    def alter_account(self, account_id, amount, cursor=None):
-        if not cursor:
-            created_cursor = True
-            cursor = self.conn.cursor()
-        else:
-            created_cursor = False
-
-        cursor.execute("SELECT Balance FROM accounts WHERE Id=?", account_id)
-        from_balance = error_if_none(cursor.fetchone(), f"Account '${account_id}' doesn't exist")[0]
-
-        if from_balance + amount < 0:
+        if account.balence + amount < 0:
             raise InsufficientFunds()
 
-        cursor.execute("UPDATE accounts SET Balance=? WHERE Id=?", (from_balance + amount, account_id))
-
-        if created_cursor:
-            cursor.close()
+        account.balence += amount
 
     def transfer(self, from_account, to_account, amount):
-        cursor = self.conn.cursor()
+        with self.session_scope() as session:
+            self._alter_account(from_account, -amount, session)
+            self._alter_account(to_account, amount, session)
 
-        self.alter_account(from_account, -amount, cursor=cursor)
-        self.alter_account(to_account, amount, cursor=cursor)
+            record = Record(from_account, to_account, amount)
+            session.add(record)
 
-        cursor.close()
+        return id
+
+    def get_transaction(self, record_id):
+        with self.session_scope() as session:
+            record = session.query(Record).filter_by(record_id).first()
+
+        if not record:
+            raise InvalidAccountUUID(id)
+
+        return {
+            "from": record["FromId"],
+            "to": record["ToId"],
+            "amount": record["Amount"]
+        }
 
 
 bank = Bank()
@@ -79,12 +134,20 @@ transfer_schema = {
 }
 
 
+@get("/transaction/<id>")
+def get_transaction(id):
+    return {
+        "status": "ok",
+        "response": bank.get_transaction(id)
+    }
+
+
 @post("/transfer")
 def transfer():
     try:
         req = json.loads(request.body())
         validate(req, transfer_schema)
-        bank.transfer(
+        id = bank.transfer(
             req["from"],
             req["to"],
             req["amount"]
@@ -97,7 +160,8 @@ def transfer():
         return HTTPResponse(status=403, body=json.dumps(resp))
 
     resp = {
-        "status": "ok"
+        "status": "ok",
+        "transaction_uuid": str(id)
     }
 
     return json.dumps(resp)
