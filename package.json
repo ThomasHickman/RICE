@@ -1,0 +1,36 @@
+{
+  "name": "rice",
+  "version": "1.0.0",
+  "description": "An implementation of a market based scheduling system",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThomasHickman/RICE.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ThomasHickman/RICE/issues"
+  },
+  "homepage": "https://github.com/ThomasHickman/RICE#readme",
+  "dependencies": {
+    "@types/lodash": "^4.14.76",
+    "@types/node": "^8.0.31",
+    "express": "^4.15.5",
+    "express-ws": "^3.0.0",
+    "lodash": "^4.17.4",
+    "sleep-promise": "^2.0.0",
+    "ts-events": "^3.2.0",
+    "ws": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.0.37",
+    "@types/ws": "^3.0.2"
+  }
+}
