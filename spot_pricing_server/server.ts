@@ -11,6 +11,17 @@ interface Resource{
     // TODO: this
 }
 
+interface JobVariables {
+    waiting_time: number;
+    running_time: number;
+    killed_by: "user" | "provider";
+    can_rebuy: boolean;
+    times_rebought: number;
+    provider_data: Object;
+    provider_script_outputs: Object;
+    user_script_outputs: Object;
+}
+
 interface Request{
     resource: Resource;
     bid_price: number;
@@ -152,6 +163,71 @@ let spHandler = new SpotpriceHandler(7);
 
 // TODO: encapsulate this in a class
 
+interface JobStatus{
+
+}
+
+class Server{
+    private socket: WebSocket;
+    private promiseFulfil: (m: any) => void;
+    private send: typeof WebSocket.prototype.send;
+    private receive<ob>(){
+        return new Promise<ob>((fulfil, reject) => {
+            this.promiseFulfil = fulfil;
+        })
+    }
+
+    constructor(){
+        wss.on('connection', (ws, req) => {
+            this.send = this.socket.send.bind(this.socket);
+            this.socket = ws;
+
+            ws.on('message', (message) => {
+                this.promiseFulfil(message);
+            });
+            
+            this.onConnect();
+        })
+    }
+
+    private async chargeUser(request: Request, jobStatus: JobStatus){
+        // TODO: maybe change this logic so that a middle server charges a user
+    }
+
+    private async onConnect(){
+        let request = await this.receive<Request>();
+        // TODO: verify this
+        this.send({
+            "status": "queued"
+        })
+
+        let task = new Task(request);
+        spHandler.add_task(task);
+
+        task.onTaskFinished.attach(async output => {
+            this.send({
+                "status": "user-terminated"
+            });
+
+            await this.chargeUser(request, jobStatus);
+        })
+
+        task.onTaskStart.attach(output => {
+            this.send({
+                "status": "task-start"
+            })
+        })
+
+        task.onTaskStart.attach(async output => {
+            this.send({
+                "status": "task-terminated"
+            })
+
+            await this.chargeUser(request, jobStatus);
+        })
+    }
+}
+
 wss.on('connection', (ws, req) => {
     let promiseFulfil: (m: any) => void;
     function receive<ob>(){
@@ -167,36 +243,7 @@ wss.on('connection', (ws, req) => {
     var send: typeof ws.send = ws.send.bind(ws);
 
     async function connect(){
-        let request = await receive<Request>();
-        // TODO: verify this
-        send({
-            "status": "queued"
-        })
-
-        let task = new Task(request);
-        spHandler.add_task(task);
-
-        task.onTaskFinished.attach(output => {
-            send({
-                "status": "user-terminated"
-            })
-
-            await chargeUser(/*TODO:*/)
-        })
-
-        task.onTaskStart.attach(output => {
-            send({
-                "status": "task-start"
-            })
-        })
-
-        task.onTaskStart.attach(output => {
-            send({
-                "status": "task-terminated"
-            })
-
-            await chargeUser(/*TODO:*/)
-        })
+        
     }
 });
 
