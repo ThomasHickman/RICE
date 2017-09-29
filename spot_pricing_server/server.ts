@@ -5,6 +5,7 @@ import WebSocket = require("ws");
 import http = require("http");
 import request = require("request");
 var expParse = require("expression-parser");
+import Transaction from "./spotprice_charger"
 
 import {Task, SpotpriceHandler} from "./spot_price_logic";
 
@@ -56,7 +57,7 @@ class Server{
     private promiseFulfil: (m: any) => void;
     private send: typeof WebSocket.prototype.send;
     private receive<ob>(){
-        return new Promise<ob>((fulfil, reject) => {
+        return new Promise<ob>((fulfil, _) => {
             this.promiseFulfil = fulfil;
         })
     }
@@ -72,11 +73,11 @@ class Server{
     }
 
     constructor(private serverAccountId: number, private central_bank_location: string){
-        this.app.get("/parameters/spot_price", (req, res) => {
+        this.app.get("/parameters/spot_price", (_, res) => {
             res.send(this.getSpotPriceHistory());
         });
 
-        this.wss.on('connection', (ws, req) => {
+        this.wss.on('connection', (ws, _) => {
             this.send = this.socket.send.bind(this.socket);
             this.socket = ws;
 
@@ -114,14 +115,6 @@ class Server{
         // TODO: maybe do something with the transaction?
     }
 
-    private baseJobVars = <Partial<JobVariables>>{
-        can_rebuy: true,
-        user_script_outputs: {},
-        provider_script_outputs: {
-            correct: true
-        }
-    }
-
     private taskTimeout = 3000;
 
     private async onWebsocketConnect(){
@@ -131,80 +124,49 @@ class Server{
             "status": "queued"
         })
 
-        let contractStart = Date.now();
-        let startTime: number;
-        let taskStarted = false;
-        let taskKilled = false;
         let task = new Task(request);
-        this.spHandler.add_task(task);
+        this.spHandler.addTask(task);
+        let transaction = new Transaction();
+        let times_bought = 1;
 
-        setTimeout(() => {
-            if(taskKilled) return;
-
-            // End of the contract without the task being killed, charge and reset variables
-            let contractFinish = Date.now();
-            if(!taskStarted){
-                startTime = contractFinish;
-            }
-
-            let jobVars = <JobVariables>_.extend(this.baseJobVars, <Partial<JobVariables>>{
-                killed_by: "none",
-                provider_data: {
-                    spot_price: undefined, // TODO: put something here
-                },
-                waiting_time: startTime - contractStart,
-                running_time: Date.now() - startTime
-            })
-
-            contractStart = Date.now();
-            if(taskStarted){
-                startTime = Date.now();
-            }
-        }, this.taskTimeout)
-
-        task.onTaskFinished.attach(async output => {
-            taskKilled = true;
+        let taskContinue = () => {
+            this.chargeUser(request, 
+                transaction.getFinishedJobVars("none", task.handleCost(), times_bought));
+            transaction = new Transaction();
             this.send({
-                "status": "user-terminated"
+                "status": "task-continued"
+            });
+            
+            times_bought++;
+        }
+        let timeout = setTimeout(() => taskContinue(), this.taskTimeout)
+
+        task.onTaskFinished.attach(output => {
+            this.send({
+                status: "task-finished",
+                output
             });
 
-            let jobVars = <JobVariables>_.extend(this.baseJobVars, <Partial<JobVariables>>{
-                killed_by: "user",
-                provider_data: {
-                    spot_price: undefined, // TODO: put something here
-                },
-                waiting_time: startTime - contractStart,
-                running_time: Date.now() - startTime
-            })
-
-            await this.chargeUser(request, jobVars);
+            this.chargeUser(request, 
+                transaction.getFinishedJobVars("user", task.handleCost(), times_bought));
+            clearTimeout(timeout);
         })
 
-        task.onTaskStart.attach(output => {
+        task.onTaskStart.attach(() => {
             this.send({
-                "status": "task-start"
-            })
+                status: "task-start"
+            });
 
-            startTime = Date.now();
-            taskStarted = true;
+            transaction.onProcessStart();
         })
 
-        task.onTaskTerminated.attach(async output => {
-            taskKilled = true;
+        task.onTaskTerminated.attach(() => {
             this.send({
-                "status": "task-terminated"
-            })
+                status: "task-terminated"
+            });
 
-            let jobVars = <JobVariables>_.extend(this.baseJobVars, <Partial<JobVariables>>{
-                killed_by: "user",
-                provider_data: {
-                    spot_price: undefined, // TODO: put something here
-                },
-                waiting_time: startTime - contractStart,
-                running_time: Date.now() - startTime
-            })
-
-            await this.chargeUser(request, jobVars);
+            this.chargeUser(request, 
+                transaction.getFinishedJobVars("provider", task.handleCost(), times_bought));
         })
     }
 }

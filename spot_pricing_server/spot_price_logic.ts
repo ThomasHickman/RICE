@@ -1,5 +1,4 @@
 import _ = require("lodash");
-import EventEmitter = require("events");
 import {SyncEvent} from 'ts-events';
 import cp = require("child_process");
 
@@ -42,13 +41,20 @@ export class Task{
     
     private process = <cp.ChildProcess | undefined>undefined;
     private stdoutBuffer = "";
-    private stderrBuffer = "";    
-
+    private stderrBuffer = "";
+    /** The cost since the last spot price change */
+    private cost = 0;
+    /** The time since the spot price last changed */
+    private lastSpotPriceChangeTime: number;
+    private currSpotPrice: number;
+    
     constructor(private request: Request){
     }
 
-    start(){
+    start(spotPrice: number){
         this.onTaskStart.post();
+        this.currSpotPrice = spotPrice;
+        this.lastSpotPriceChangeTime = Date.now();
         
         const args = `run python ${this.request.script_parameters.command}`;
         this.process = cp.spawn("docker", args.split("\n"));
@@ -70,6 +76,33 @@ export class Task{
         })
     }
 
+    /** 
+     * Returns the current spot price cost and 
+     */
+    handleCost(){
+        this.changeSpotPrice(this.currSpotPrice);
+        
+        let cost = this.cost;
+        this.cost = 0;
+        return cost;
+    }
+    
+    private calculateSpotPriceCost(rate: number, time: number){
+        return rate * time / 1000*60*60 //= 1 hour
+    }
+
+    changeSpotPrice(newRate: number){
+        let changeTime = Date.now()
+        
+        this.cost += this.calculateSpotPriceCost(
+            this.currSpotPrice,
+            changeTime - this.lastSpotPriceChangeTime
+        )
+
+        this.currSpotPrice = newRate;
+        this.lastSpotPriceChangeTime = changeTime;
+    }
+
     terminate(){
         if (this.process == undefined){
             throw Error("Task.terminate: cannot terminate non running process")
@@ -83,31 +116,43 @@ export class Task{
 export class SpotpriceHandler {
     private tasks_running = <Task[]>[];
     private tasks_queued = <Task[]>[];
+    private spotPrice: number;
 
     constructor(private max_tasks: number) {
     }
 
-    private start_task(task: Task) {
+    private startTask(task: Task) {
         this.tasks_running.push(task);
-        task.onTaskTerminated.attach(() => this.on_task_finish(task))
-        task.start();
+        task.onTaskTerminated.attach(() => this.onTaskFinish(task));
+        this.recalculateSpotPrice();
+        task.start(this.spotPrice);
     }
 
-    private on_task_finish(task: Task) {
-        _.remove(this.tasks_running, task)
+    private onTaskFinish(task: Task) {
+        _.remove(this.tasks_running, task);
+        this.moveOverTasks();
     }
-    
-    add_task(task: Task) {
+
+    private recalculateSpotPrice(){
+        _.sortBy(this.tasks_running, "bid_price");
+        this.spotPrice = this.tasks_running[0].bid_price;
+
+        this.tasks_running.forEach(task => {
+            task.changeSpotPrice(this.spotPrice);
+        })
+    }
+
+    addTask(task: Task) {
         let bottom_task;
         if (this.tasks_running.length < this.max_tasks) {
-            this.start_task(task);
+            this.startTask(task);
         }
         else {
             bottom_task = _.minBy(this.tasks_running, t => t.bid_price);
             if (bottom_task != undefined && bottom_task.bid_price < task.bid_price) {
-                _.remove(this.tasks_running, bottom_task)
+                _.remove(this.tasks_running, bottom_task);
                 bottom_task.terminate();
-                this.start_task(task);
+                this.startTask(task);
             }
             else {
                 this.tasks_queued.push(task);
@@ -115,31 +160,39 @@ export class SpotpriceHandler {
         }
     }
 
-    set_max_tasks(new_size: number) {
-        if (new_size > this.max_tasks) {
+    /** 
+     * This is called when a task is removed or the max_tasks variable changes,
+     *  it either queues tasks or terminates them
+     */
+    private moveOverTasks(){
+        if (this.max_tasks > this.tasks_running.length) {
             _.sortBy(this.tasks_queued, "bid_price")
-            let new_elements = new_size - this.tasks_running.length;
+            let new_elements = this.max_tasks - this.tasks_running.length;
 
             for(let i = 0;i < new_elements;i++) {
                 let new_task = this.tasks_queued.pop();
                 if(new_task != undefined){
-                    this.start_task(new_task);
+                    this.startTask(new_task);
                 }
                 else{
                     break;
                 }
             }
         }
-        else if (new_size < this.tasks_running.length) {
+        else if (this.max_tasks < this.tasks_running.length) {
             _.sortBy(this.tasks_running, "bid_price");
-            let elements_to_remove = this.tasks_running.length - new_size;
+            let elements_to_remove = this.tasks_running.length - this.max_tasks;
             
             for(let i = 0;i < elements_to_remove;i++) {
                 let new_task = <Task>this.tasks_running.pop(); // This is always going to return something
                 new_task.terminate();
             }
+            this.recalculateSpotPrice();
         }
+    }
 
+    setMaxTasks(new_size: number) {
         this.max_tasks = new_size;
+        this.moveOverTasks();
     }
 }
