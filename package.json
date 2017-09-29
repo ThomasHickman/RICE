@@ -22,9 +22,12 @@
   "dependencies": {
     "@types/lodash": "^4.14.76",
     "@types/node": "^8.0.31",
+    "@types/request": "^2.0.3",
     "express": "^4.15.5",
     "express-ws": "^3.0.0",
+    "expression-parser": "^1.0.0",
     "lodash": "^4.17.4",
+    "request": "^2.83.0",
     "sleep-promise": "^2.0.0",
     "ts-events": "^3.2.0",
     "ws": "^3.2.0"
