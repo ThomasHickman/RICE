@@ -35,6 +35,8 @@
   },
   "devDependencies": {
     "@types/express": "^4.0.37",
-    "@types/ws": "^3.0.2"
+    "@types/jasmine": "^2.6.0",
+    "@types/ws": "^3.0.2",
+    "jasmine": "^2.8.0"
   }
 }

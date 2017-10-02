@@ -26,12 +26,12 @@ interface Request{
 }
 
 interface TaskOutput{
-    exit_code: number;
+    exitCode: number;
     stdout: string;
     stderr: string;
 }
 
-export class Task{
+export class SpotpriceTask{
     public bid_price: number;
     
     public onTaskStart = new SyncEvent<void>();
@@ -67,9 +67,9 @@ export class Task{
             this.stderrBuffer += data;
         })
 
-        this.process.on("close", exit_code => {
+        this.process.on("close", exitCode => {
             this.onTaskFinished.post({
-                exit_code: exit_code,
+                exitCode: exitCode,
                 stdout: this.stdoutBuffer,
                 stderr: this.stderrBuffer
             })
@@ -114,48 +114,48 @@ export class Task{
 }
 
 export class SpotpriceHandler {
-    private tasks_running = <Task[]>[];
-    private tasks_queued = <Task[]>[];
+    private tasksRunning = <SpotpriceTask[]>[];
+    private tasksQueued = <SpotpriceTask[]>[];
     private spotPrice: number;
 
     constructor(private max_tasks: number) {
     }
 
-    private startTask(task: Task) {
-        this.tasks_running.push(task);
+    private startTask(task: SpotpriceTask) {
+        this.tasksRunning.push(task);
         task.onTaskTerminated.attach(() => this.onTaskFinish(task));
         this.recalculateSpotPrice();
         task.start(this.spotPrice);
     }
 
-    private onTaskFinish(task: Task) {
-        _.remove(this.tasks_running, task);
+    private onTaskFinish(task: SpotpriceTask) {
+        _.remove(this.tasksRunning, task);
         this.moveOverTasks();
     }
 
     private recalculateSpotPrice(){
-        _.sortBy(this.tasks_running, "bid_price");
-        this.spotPrice = this.tasks_running[0].bid_price;
+        _.sortBy(this.tasksRunning, "bid_price");
+        this.spotPrice = this.tasksRunning[0].bid_price;
 
-        this.tasks_running.forEach(task => {
+        this.tasksRunning.forEach(task => {
             task.changeSpotPrice(this.spotPrice);
         })
     }
 
-    addTask(task: Task) {
+    addTask(task: SpotpriceTask) {
         let bottom_task;
-        if (this.tasks_running.length < this.max_tasks) {
+        if (this.tasksRunning.length < this.max_tasks) {
             this.startTask(task);
         }
         else {
-            bottom_task = _.minBy(this.tasks_running, t => t.bid_price);
+            bottom_task = _.minBy(this.tasksRunning, t => t.bid_price);
             if (bottom_task != undefined && bottom_task.bid_price < task.bid_price) {
-                _.remove(this.tasks_running, bottom_task);
+                _.remove(this.tasksRunning, bottom_task);
                 bottom_task.terminate();
                 this.startTask(task);
             }
             else {
-                this.tasks_queued.push(task);
+                this.tasksQueued.push(task);
             }
         }
     }
@@ -165,12 +165,12 @@ export class SpotpriceHandler {
      *  it either queues tasks or terminates them
      */
     private moveOverTasks(){
-        if (this.max_tasks > this.tasks_running.length) {
-            _.sortBy(this.tasks_queued, "bid_price")
-            let new_elements = this.max_tasks - this.tasks_running.length;
+        if (this.max_tasks > this.tasksRunning.length) {
+            _.sortBy(this.tasksQueued, "bid_price")
+            let new_elements = this.max_tasks - this.tasksRunning.length;
 
             for(let i = 0;i < new_elements;i++) {
-                let new_task = this.tasks_queued.pop();
+                let new_task = this.tasksQueued.pop();
                 if(new_task != undefined){
                     this.startTask(new_task);
                 }
@@ -179,12 +179,12 @@ export class SpotpriceHandler {
                 }
             }
         }
-        else if (this.max_tasks < this.tasks_running.length) {
-            _.sortBy(this.tasks_running, "bid_price");
-            let elements_to_remove = this.tasks_running.length - this.max_tasks;
+        else if (this.max_tasks < this.tasksRunning.length) {
+            _.sortBy(this.tasksRunning, "bid_price");
+            let elements_to_remove = this.tasksRunning.length - this.max_tasks;
             
             for(let i = 0;i < elements_to_remove;i++) {
-                let new_task = <Task>this.tasks_running.pop(); // This is always going to return something
+                let new_task = <SpotpriceTask>this.tasksRunning.pop(); // This is always going to return something
                 new_task.terminate();
             }
             this.recalculateSpotPrice();

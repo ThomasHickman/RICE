@@ -7,7 +7,7 @@ import request = require("request");
 var expParse = require("expression-parser");
 import Transaction from "./spotprice_charger"
 
-import {Task, SpotpriceHandler} from "./spot_price_logic";
+import {SpotpriceTask, SpotpriceHandler} from "./spot_price_logic";
 
 interface ScriptDesc{
     // TODO: this
@@ -28,9 +28,9 @@ interface JobVariables {
     killed_by: "user" | "provider" | "none";
     can_rebuy: boolean;
     times_rebought: number;
-    provider_data: Object;
-    provider_script_outputs: Object;
-    user_script_outputs: Object;
+    provider_data: object;
+    provider_script_outputs: object;
+    user_script_outputs: object;
 }
 
 interface Request{
@@ -48,7 +48,7 @@ interface TaskOutput{
     stderr: string;
 }
 
-function sterilizeObject(ob: Object){
+function sterilizeObject(ob: object){
     return _.extend(Object.create(null, {}), ob);
 }
 
@@ -72,7 +72,7 @@ class Server{
         return this.spotPriceHistory;
     }
 
-    constructor(private serverAccountId: number, private central_bank_location: string){
+    constructor(private serverAccountId: number, private centralBankLocation: string){
         this.app.get("/parameters/spot_price", (_, res) => {
             res.send(this.getSpotPriceHistory());
         });
@@ -99,7 +99,7 @@ class Server{
         // TODO: Introduce if statements and use a different library
         // that doesn't evaluate javascript in this context
         var cost = costFunc(sterilizeObject(jobVars));
-        var transaction = await fetch(this.central_bank_location, {
+        var transaction = await fetch(this.centralBankLocation, {
             method: "POST",
             headers: {
                 'Accept': 'application/json, text/plain, */*',
@@ -124,20 +124,20 @@ class Server{
             "status": "queued"
         })
 
-        let task = new Task(request);
+        let task = new SpotpriceTask(request);
         this.spHandler.addTask(task);
         let transaction = new Transaction();
-        let times_bought = 1;
+        let timesBought = 1;
 
         let taskContinue = () => {
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("none", task.handleCost(), times_bought));
+                transaction.getFinishedJobVars("none", task.handleCost(), timesBought));
             transaction = new Transaction();
             this.send({
                 "status": "task-continued"
             });
             
-            times_bought++;
+            timesBought++;
         }
         let timeout = setTimeout(() => taskContinue(), this.taskTimeout)
 
@@ -148,7 +148,7 @@ class Server{
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("user", task.handleCost(), times_bought));
+                transaction.getFinishedJobVars("user", task.handleCost(), timesBought));
             clearTimeout(timeout);
         })
 
@@ -166,7 +166,12 @@ class Server{
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("provider", task.handleCost(), times_bought));
+                transaction.getFinishedJobVars("provider", task.handleCost(), timesBought));
         })
     }
 }
+
+const accountId = 2;
+const centralBankLocation = "127.0.0.1";
+
+new Server(accountId, centralBankLocation);

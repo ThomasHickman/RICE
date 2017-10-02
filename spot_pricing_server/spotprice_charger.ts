@@ -1,4 +1,4 @@
-import {Task, SpotpriceHandler} from "./spot_price_logic";
+import {SpotpriceTask, SpotpriceHandler} from "./spot_price_logic";
 
 interface JobVariables {
     waiting_time: number;
