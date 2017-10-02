@@ -1,88 +1,36 @@
 import _ = require("lodash");
 import {SyncEvent} from 'ts-events';
-import cp = require("child_process");
+import {Task} from "./tasks"
 
-interface Resource{
-    // TODO: this
-}
-
-interface JobVariables {
-    waiting_time: number;
-    running_time: number;
-    killed_by: "user" | "provider";
-    can_rebuy: boolean;
-    times_rebought: number;
-    provider_data: Object;
-    provider_script_outputs: Object;
-    user_script_outputs: Object;
-}
-
-interface Request{
-    resource: Resource;
-    bid_price: number;
-    script_parameters: {
-        command: string;
-    }
-}
-
-interface TaskOutput{
-    exitCode: number;
-    stdout: string;
-    stderr: string;
-}
-
-export class SpotpriceTask{
-    public bid_price: number;
-    
+export class SpotpriceTask<TaskOutput>{
     public onTaskStart = new SyncEvent<void>();
     public onTaskTerminated = new SyncEvent<void>();
     // This is only emitted for user terminated tasks
     public onTaskFinished = new SyncEvent<TaskOutput>();
     
-    private process = <cp.ChildProcess | undefined>undefined;
-    private stdoutBuffer = "";
-    private stderrBuffer = "";
     /** The cost since the last spot price change */
     private cost = 0;
     /** The time since the spot price last changed */
     private lastSpotPriceChangeTime: number;
     private currSpotPrice: number;
     
-    constructor(private request: Request){
+    constructor(private task: Task<TaskOutput>, public bidPrice: number){
     }
 
     start(spotPrice: number){
+        this.task.start();
         this.onTaskStart.post();
         this.currSpotPrice = spotPrice;
         this.lastSpotPriceChangeTime = Date.now();
-        
-        const args = `run python ${this.request.script_parameters.command}`;
-        this.process = cp.spawn("docker", args.split("\n"));
-
-        this.process.stdout.on("data", data => {
-            this.stderrBuffer += data;
-        })
-
-        this.process.stderr.on("data", data => {
-            this.stderrBuffer += data;
-        })
-
-        this.process.on("close", exitCode => {
-            this.onTaskFinished.post({
-                exitCode: exitCode,
-                stdout: this.stdoutBuffer,
-                stderr: this.stderrBuffer
-            })
-        })
     }
 
-    /** 
+    /**
      * Returns the current spot price cost and 
      */
-    handleCost(){
+    popCost(){
         this.changeSpotPrice(this.currSpotPrice);
-        
-        let cost = this.cost;
+
+        const cost = this.cost;
         this.cost = 0;
         return cost;
     }
@@ -104,95 +52,91 @@ export class SpotpriceTask{
     }
 
     terminate(){
-        if (this.process == undefined){
-            throw Error("Task.terminate: cannot terminate non running process")
-        }
-        
-        this.process.kill();
+        this.task.terminate();
         this.onTaskTerminated.post();
     }
 }
 
 export class SpotpriceHandler {
-    private tasksRunning = <SpotpriceTask[]>[];
-    private tasksQueued = <SpotpriceTask[]>[];
+    private tasksRunning = <SpotpriceTask<any>[]>[];
+    private tasksQueued = <SpotpriceTask<any>[]>[];
     private spotPrice: number;
 
-    constructor(private max_tasks: number) {
+    constructor(private maxTasks: number) {
     }
 
-    private startTask(task: SpotpriceTask) {
-        this.tasksRunning.push(task);
-        task.onTaskTerminated.attach(() => this.onTaskFinish(task));
+    private startTask(spTask: SpotpriceTask<any>) {
+        this.tasksRunning.push(spTask);
+        spTask.onTaskTerminated.attach(() => this.onTaskFinish(spTask));
         this.recalculateSpotPrice();
-        task.start(this.spotPrice);
+        spTask.start(this.spotPrice);
     }
 
-    private onTaskFinish(task: SpotpriceTask) {
-        _.remove(this.tasksRunning, task);
+    private onTaskFinish(spTask: SpotpriceTask<any>) {
+        _.remove(this.tasksRunning, spTask);
         this.moveOverTasks();
     }
 
-    private recalculateSpotPrice(){
+    private recalculateSpotPrice() {
         _.sortBy(this.tasksRunning, "bid_price");
-        this.spotPrice = this.tasksRunning[0].bid_price;
+        this.spotPrice = this.tasksRunning[0].bidPrice;
 
         this.tasksRunning.forEach(task => {
             task.changeSpotPrice(this.spotPrice);
-        })
+        });
     }
 
-    addTask(task: SpotpriceTask) {
+    public addTask(spTask: SpotpriceTask<any>) {
         let bottom_task;
-        if (this.tasksRunning.length < this.max_tasks) {
-            this.startTask(task);
+        if (this.tasksRunning.length < this.maxTasks) {
+            this.startTask(spTask);
         }
         else {
-            bottom_task = _.minBy(this.tasksRunning, t => t.bid_price);
-            if (bottom_task != undefined && bottom_task.bid_price < task.bid_price) {
+            bottom_task = _.minBy(this.tasksRunning, (t) => t.bidPrice);
+            if (bottom_task !== undefined && bottom_task.bidPrice < spTask.bidPrice) {
                 _.remove(this.tasksRunning, bottom_task);
                 bottom_task.terminate();
-                this.startTask(task);
+                this.startTask(spTask);
             }
             else {
-                this.tasksQueued.push(task);
+                this.tasksQueued.push(spTask);
             }
         }
     }
 
-    /** 
+    /**
      * This is called when a task is removed or the max_tasks variable changes,
      *  it either queues tasks or terminates them
      */
     private moveOverTasks(){
-        if (this.max_tasks > this.tasksRunning.length) {
+        if (this.maxTasks > this.tasksRunning.length) {
             _.sortBy(this.tasksQueued, "bid_price")
-            let new_elements = this.max_tasks - this.tasksRunning.length;
+            const newElements = this.maxTasks - this.tasksRunning.length;
 
-            for(let i = 0;i < new_elements;i++) {
-                let new_task = this.tasksQueued.pop();
-                if(new_task != undefined){
-                    this.startTask(new_task);
+            for(let i = 0;i < newElements;i++) {
+                const newTask = this.tasksQueued.pop();
+                if(newTask != undefined){
+                    this.startTask(newTask);
                 }
                 else{
                     break;
                 }
             }
         }
-        else if (this.max_tasks < this.tasksRunning.length) {
+        else if (this.maxTasks < this.tasksRunning.length) {
             _.sortBy(this.tasksRunning, "bid_price");
-            let elements_to_remove = this.tasksRunning.length - this.max_tasks;
-            
-            for(let i = 0;i < elements_to_remove;i++) {
-                let new_task = <SpotpriceTask>this.tasksRunning.pop(); // This is always going to return something
+            let elementsToRemove = this.tasksRunning.length - this.maxTasks;
+
+            for (let i = 0; i < elementsToRemove; i++) {
+                const new_task = this.tasksRunning.pop() as SpotpriceTask<any>; // This is always going to return something
                 new_task.terminate();
             }
             this.recalculateSpotPrice();
         }
     }
 
-    setMaxTasks(new_size: number) {
-        this.max_tasks = new_size;
+    public setMaxTasks(new_size: number) {
+        this.maxTasks = new_size;
         this.moveOverTasks();
     }
 }

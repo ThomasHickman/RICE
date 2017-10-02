@@ -131,7 +131,7 @@ class Server{
 
         let taskContinue = () => {
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("none", task.handleCost(), timesBought));
+                transaction.getFinishedJobVars("none", task.popCost(), timesBought));
             transaction = new Transaction();
             this.send({
                 "status": "task-continued"
@@ -148,7 +148,7 @@ class Server{
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("user", task.handleCost(), timesBought));
+                transaction.getFinishedJobVars("user", task.popCost(), timesBought));
             clearTimeout(timeout);
         })
 
@@ -166,7 +166,7 @@ class Server{
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("provider", task.handleCost(), timesBought));
+                transaction.getFinishedJobVars("provider", task.popCost(), timesBought));
         })
     }
 }

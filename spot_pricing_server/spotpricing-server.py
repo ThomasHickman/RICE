@@ -13,6 +13,7 @@ dev = True
 
 app = Sanic(__name__)
 
+
 def tell_discovery_server():
     with open("commdities/spot_pricing.json", "r") as f:
         spot_pricing_comm = parse_json(f)
@@ -26,6 +27,7 @@ def tell_discovery_server():
 
 def main():
     tell_discovery_server()
+
 
 run_schema = {
     "type": "object",
@@ -41,6 +43,7 @@ run_schema = {
     }
 }
 
+
 class Task:
     def __init__(self, request):
         self.bid_price = request["bid_price"]
@@ -48,9 +51,10 @@ class Task:
 
     def start(self):
         asyncio.create_subprocess_exec()
-    
+
     def terminate(self):
         pass
+
 
 class SpotpriceHandler:
     def __init__(self, max_tasks):
@@ -69,7 +73,7 @@ class SpotpriceHandler:
         if len(self.tasks_running) < self._max_tasks:
             self.start_task(task)
         else:
-            bottom_task = min(self.tasks_running, lambda t:t.bid_price)
+            bottom_task = min(self.tasks_running, lambda t: t.bid_price)
             if bottom_task.bid_price < task.bid_price:
                 self.tasks_running.remove(bottom_task)
                 bottom_task.terminate()
@@ -83,21 +87,23 @@ class SpotpriceHandler:
 
     def set_max_tasks(self, new_size):
         if new_size > self._max_tasks:
-            self.tasks_queued.sort(key=lambda t:t.bid_price)
+            self.tasks_queued.sort(key=lambda t: t.bid_price)
             new_elements = new_size - self._max_tasks
 
             for _ in range(new_elements):
                 task = self.tasks_queued.pop()
                 self.start_task(task)
         else:
-            self.tasks_running.sort(key=lambda t:t.bid_price)
+            self.tasks_running.sort(key=lambda t: t.bid_price)
             elements_to_remove = self._max_tasks - new_size
-            
+
             for _ in range(elements_to_remove):
                 task = self.tasks_running.pop()
                 task.terminate()
 
+
 handler = SpotpriceHandler(7)
+
 
 @app.websocket("/run")
 async def run(request, ws):
@@ -109,10 +115,10 @@ async def run(request, ws):
         }))
 
     task = Task(request, send_message)
-    
+
     req = parse_json(await ws.recv())
     validate(req, run_schema)
-    
+
     await keep_alive
 
 
@@ -122,7 +128,8 @@ def get_parameters():
 
 
 def get_reserve_price(floor_price, ceil_price, prev):
-    return -0.7*prev + numpy.random.normal(0, 0.39 * (ceil_price - floor_price))
+    return -0.7 * prev + numpy.random.normal(0, 0.39 * (ceil_price - floor_price))
+
 
 def get_prices(floor_price, ceil_price):
     curr_price = 0
