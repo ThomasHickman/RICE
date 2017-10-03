@@ -15,7 +15,7 @@
 
 ## Compute commodities
 
-In this market, there needs to be some definition of commodities - which are fixed specifications of computation such that they can be traded in an open market (you will be getting the same product regardless of where you trade it).
+In this market, there needs to be some definition of commodities - which are fixed specifications of computation such that they can be traded in an open market (you will be getting the same product regardless of where you trade it). This should specify what a provider expects before it will do a computation and what the user expects before they pay. The payment is deducted at the end of the contract, which is either when the computation is terminated, another point determined by the user. The provider need to specify all the variables that are used in the contract at the end of the computation.
 
 The commodities would need to defined in some kind of data structure. This specifies the requirements that the user should expect at the end of the computation (e.g. that it's allowed to run for a specified period), requirements of the provider (e.g. for some kinds of contracts that the input files are in a certain files) and the mechanism for working out the cost.
 
@@ -40,6 +40,7 @@ The commodities would need to defined in some kind of data structure. This speci
     A description of a python script which will provide extra variables for the `provider_requirements` section. The script is evaluated through evaluating `evaluate(input: string)`, where `input` is the command used to run the job. The input files should also be in the file system at the time of running. This also should be expected to finish by 10 seconds.
 - `cost`: `IfExpression`
     An expression that is evaluated at the end of the computation that specifies the cost of the computation. If the user requirements have been fulfilled correctly, then this amount is withdrawn out of the user's account.
+- `get_provider_data`: TODO: this
 
 #### Variables
 
@@ -47,10 +48,10 @@ The commodities would need to defined in some kind of data structure. This speci
     The duration from when the deal is completed to when the computation starts
 - `running_time`: `Duration`
     The duration from the start of the computation and when it is killed
-- `killed_by`: `"user" | "provider"`
-    The entity that kills the job.
+- `killed_by`: `"user" | "provider" | "none"`
+    The entity that kills the job - "none" if it hasn't been killed yet and is continuing it's execution
 - `can_rebuy`: `boolean`
-    Whether you can rebuy this commodity to keep your instance active
+    Whether you can rebuy this commodity (if still available) to keep your instance active
 - `times_rebought`: `number>0`
     Number of times you have bought this resource before
 
@@ -192,13 +193,18 @@ evaluate_provider_script:
 user_requirements: '''
     correct
     spot_price < bid_price
-    running_time is 30 => killed_by is "provider"
+    running_time > 30 or killed_by is "user"
     can_rebuy
 '''
 cost: '''
-    running_time * spot_price
+    if(running_time > 30 or killed_by is "user")
+        spot_price
+    else
+        0
 '''
 ```
+
+Spot price is measured in cost per hour
 
 Amazon reserved pricing:
 

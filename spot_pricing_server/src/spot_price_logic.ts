@@ -11,17 +11,16 @@ export class SpotpriceTask<TaskOutput>{
     /** The cost since the last spot price change */
     private cost = 0;
     /** The time since the spot price last changed */
-    private lastSpotPriceChangeTime: number;
-    private currSpotPrice: number;
+    private lastSpotPriceChangeTime: number | undefined;
+    private currSpotPrice = 0;
     
     constructor(private task: Task<TaskOutput>, public bidPrice: number){
+        this.task.onTaskFinished.attach(x => this.onTaskFinished.post(x));
     }
 
-    start(spotPrice: number){
+    start(){
         this.task.start();
         this.onTaskStart.post();
-        this.currSpotPrice = spotPrice;
-        this.lastSpotPriceChangeTime = Date.now();
     }
 
     /**
@@ -41,6 +40,9 @@ export class SpotpriceTask<TaskOutput>{
 
     changeSpotPrice(newRate: number){
         let changeTime = Date.now()
+        if(this.lastSpotPriceChangeTime == undefined){
+            this.lastSpotPriceChangeTime = Date.now();
+        }
         
         this.cost += this.calculateSpotPriceCost(
             this.currSpotPrice,

@@ -1,11 +1,12 @@
 import _ = require("lodash");
-import EventEmitter = require("events");
 import express = require("express");
 import WebSocket = require("ws");
 import http = require("http");
-import request = require("request");
 var expParse = require("expression-parser");
-import Transaction from "./spotprice_charger"
+import Transaction from "./spotprice_charger";
+import {PythonDockerTask} from "./tasks"
+var fetch = require("node-fetch");
+import commander = require("commander");
 
 import {SpotpriceTask, SpotpriceHandler} from "./spot_price_logic";
 
@@ -42,12 +43,6 @@ interface Request{
     user_account: number // TODO: make this a bit more secure
 }
 
-interface TaskOutput{
-    exit_code: number;
-    stdout: string;
-    stderr: string;
-}
-
 function sterilizeObject(ob: object){
     return _.extend(Object.create(null, {}), ob);
 }
@@ -69,26 +64,37 @@ class Server{
     private spHandler = new SpotpriceHandler(7);
 
     private getSpotPriceHistory(){
-        return this.spotPriceHistory;
+        return this.spotPriceHistory; // TODO: do something better here
     }
 
-    constructor(private serverAccountId: number, private centralBankLocation: string){
+    constructor(private serverAccountId: number, private centralBankLocation: string, port: number){
         this.app.get("/parameters/spot_price", (_, res) => {
             res.send(this.getSpotPriceHistory());
         });
 
-        this.wss.on('connection', (ws, _) => {
-            this.send = this.socket.send.bind(this.socket);
+        this.wss.on('connection', async (ws, _) => {
             this.socket = ws;
+            this.send = (message: string) => {
+                this.socket.send(JSON.stringify(message))
+            }
 
-            ws.on('message', (message) => {
-                this.promiseFulfil(message);
+            ws.on('message', (message: string) => {
+                this.promiseFulfil(JSON.parse(message));
             });
             
-            this.onWebsocketConnect();
+            try{
+                await this.onWebsocketConnect();
+            }
+            catch(e){
+                this.send({
+                    status: "error",
+                    data: e
+                })
+                ws.close();
+            }
         })
 
-        this.server.listen(8080, () => {
+        this.server.listen(port, () => {
             console.log('Listening on %d', this.server.address().port);
         });
     }
@@ -99,7 +105,7 @@ class Server{
         // TODO: Introduce if statements and use a different library
         // that doesn't evaluate javascript in this context
         var cost = costFunc(sterilizeObject(jobVars));
-        var transaction = await fetch(this.centralBankLocation, {
+        var transaction = await fetch(`http://${this.centralBankLocation}/transfer`, {
             method: "POST",
             headers: {
                 'Accept': 'application/json, text/plain, */*',
@@ -121,17 +127,17 @@ class Server{
         let request = await this.receive<Request>();
         // TODO: verify this
         this.send({
-            "status": "queued"
+            "status": "submitted"
         })
 
-        let task = new SpotpriceTask(request);
-        this.spHandler.addTask(task);
+        let spTask = new SpotpriceTask(new PythonDockerTask(request.script_parameters.command), request.bid_price);
+        this.spHandler.addTask(spTask);
         let transaction = new Transaction();
         let timesBought = 1;
 
         let taskContinue = () => {
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("none", task.popCost(), timesBought));
+                transaction.getFinishedJobVars("none", spTask.popCost(), timesBought));
             transaction = new Transaction();
             this.send({
                 "status": "task-continued"
@@ -141,18 +147,20 @@ class Server{
         }
         let timeout = setTimeout(() => taskContinue(), this.taskTimeout)
 
-        task.onTaskFinished.attach(output => {
+        spTask.onTaskFinished.attach(output => {
             this.send({
                 status: "task-finished",
                 output
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("user", task.popCost(), timesBought));
+                transaction.getFinishedJobVars("user", spTask.popCost(), timesBought));
             clearTimeout(timeout);
+
+            this.socket.close();
         })
 
-        task.onTaskStart.attach(() => {
+        spTask.onTaskStart.attach(() => {
             this.send({
                 status: "task-start"
             });
@@ -160,18 +168,29 @@ class Server{
             transaction.onProcessStart();
         })
 
-        task.onTaskTerminated.attach(() => {
+        spTask.onTaskTerminated.attach(() => {
             this.send({
                 status: "task-terminated"
             });
 
             this.chargeUser(request, 
-                transaction.getFinishedJobVars("provider", task.popCost(), timesBought));
+                transaction.getFinishedJobVars("provider", spTask.popCost(), timesBought));
+
+            this.socket.close();
         })
     }
 }
 
-const accountId = 2;
-const centralBankLocation = "127.0.0.1";
+function main(){
+    commander
+        .version("0.0.1")
+        .option("--central-bank <location>", "The location of the central bank")
+        .option("--account-id <id>", "The id of of the banks account", parseInt)
+        .option("--port <port>", "The port to serve the requests over", parseInt, 80)
+        .parse(process.argv)
+    
+    new Server(commander.accountId, commander.centralBank, commander.port);
+}
 
-new Server(accountId, centralBankLocation);
+
+main();

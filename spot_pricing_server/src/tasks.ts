@@ -28,7 +28,7 @@ export class PythonDockerTask extends Task<CommandLineOutput>{
         this.process = cp.spawn("docker", args.split(" "));
 
         this.process.stdout.on("data", data => {
-            this.stderrBuffer += data;
+            this.stdoutBuffer += data;
         })
 
         this.process.stderr.on("data", data => {

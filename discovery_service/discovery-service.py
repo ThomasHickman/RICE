@@ -6,14 +6,15 @@ providers = [
     "provider1"
 ]
 
+
 @route('/')
 def main():
     output = {
         "status": "ok",
-        "resources": json.dumps(providers)
+        "resources": providers
     }
 
     return json.dumps(output)
 
-application = default_app()
 
+application = default_app()

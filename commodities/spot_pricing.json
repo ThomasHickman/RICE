@@ -19,5 +19,5 @@
         "running_time is 30 => killed_by is \"provider\"",
         "can_rebuy"
     ],
-    "cost": "running_time * spot_price"
+    "cost": "spot_price"
   }

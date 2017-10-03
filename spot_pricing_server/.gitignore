@@ -1,0 +1,4 @@
+node_modules
+
+spot_pricing_server/src/*.js
+spot_pricing_server/src/*.js.map

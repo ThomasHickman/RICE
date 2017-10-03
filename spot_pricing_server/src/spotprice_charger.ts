@@ -27,9 +27,7 @@ export default class Transaction{
 
         return {
             killed_by: killed_by,
-            provider_data: {
-                spot_price
-            },
+            spot_price: spot_price,
             running_time: processEnd - this.processStart,
             times_rebought: 0,
             waiting_time: this.processStart - this.contractStart,
