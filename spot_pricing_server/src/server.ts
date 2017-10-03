@@ -3,45 +3,14 @@ import express = require("express");
 import WebSocket = require("ws");
 import http = require("http");
 var expParse = require("expression-parser");
-import Transaction from "./spotprice_charger";
-import {PythonDockerTask} from "./tasks"
 var fetch = require("node-fetch");
 import commander = require("commander");
 
-import {SpotpriceTask, SpotpriceHandler} from "./spot_price_logic";
-
-interface ScriptDesc{
-    // TODO: this
-}
-
-interface Resource{
-    user_requirements: string[];
-    provider_requirements: string[];
-    evaluate_provider_script: ScriptDesc;
-    evaluate_inputs_script: ScriptDesc;
-    cost: string;
-    get_provider_data: any;// TODO: this
-}
-
-interface JobVariables {
-    waiting_time: number;
-    running_time: number;
-    killed_by: "user" | "provider" | "none";
-    can_rebuy: boolean;
-    times_rebought: number;
-    provider_data: object;
-    provider_script_outputs: object;
-    user_script_outputs: object;
-}
-
-interface Request{
-    resource: Resource;
-    bid_price: number;
-    script_parameters: {
-        command: string;
-    },
-    user_account: number // TODO: make this a bit more secure
-}
+import {PythonDockerTask} from "./tasks";
+import Transaction from "./Transaction";
+import SpotpriceTask from "./SpotpriceTask";
+import SpotpriceHandler from "./SpotpriceHandler";
+import {JobRequest, JobVariables, Resource} from "./spec-interfaces";
 
 function sterilizeObject(ob: object){
     return _.extend(Object.create(null, {}), ob);
@@ -99,7 +68,7 @@ class Server{
         });
     }
 
-    private async chargeUser(req: Request, jobVars: JobVariables){
+    private async chargeUser(req: JobRequest<any>, jobVars: JobVariables){
         var costFunc = expParse(req.resource.cost);
         // Need to sterilize to make sure you don't access prototype etc.
         // TODO: Introduce if statements and use a different library
@@ -124,7 +93,7 @@ class Server{
     private taskTimeout = 3000;
 
     private async onWebsocketConnect(){
-        let request = await this.receive<Request>();
+        let request = await this.receive<JobRequest<any>>();
         // TODO: verify this
         this.send({
             "status": "submitted"

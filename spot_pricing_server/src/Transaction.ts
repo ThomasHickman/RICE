@@ -1,19 +1,4 @@
-import {SpotpriceTask, SpotpriceHandler} from "./spot_price_logic";
-
-interface JobVariables {
-    waiting_time: number;
-    running_time: number;
-    killed_by: "user" | "provider" | "none";
-    can_rebuy: boolean;
-    times_rebought: number;
-    provider_data: Object;
-    provider_script_outputs: Object;
-    user_script_outputs: Object;
-}
-
-function id<T>(value: T){
-    return value;
-}
+import {JobVariables} from "./spec-interfaces";
 
 export default class Transaction{
     private contractStart = Date.now()

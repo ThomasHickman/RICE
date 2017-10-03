@@ -1,5 +1,5 @@
-import {SpotpriceHandler, SpotpriceTask} from "./spot_price_logic";
-import {PythonDockerTask} from "./tasks";
+import {SpotpriceHandler, SpotpriceTask} from "../src/spot_price_logic";
+import {PythonDockerTask} from "../src/tasks";
 
 describe("task spawning", () => {
     function createTask(cost: number): [SpotpriceTask<any>, jasmine.Spy] {
