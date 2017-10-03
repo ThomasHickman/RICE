@@ -10,7 +10,7 @@ import {PythonDockerTask} from "./tasks";
 import Transaction from "./Transaction";
 import SpotpriceTask from "./SpotpriceTask";
 import SpotpriceHandler from "./SpotpriceHandler";
-import {JobRequest, JobVariables, Resource} from "./spec-interfaces";
+import {JobRequest, JobVariables} from "./spec-interfaces";
 
 function sterilizeObject(ob: object){
     return _.extend(Object.create(null, {}), ob);
@@ -36,18 +36,21 @@ class Server{
         return this.spotPriceHistory; // TODO: do something better here
     }
 
-    constructor(private serverAccountId: number, private centralBankLocation: string, port: number){
+    constructor(private serverAccountId: number, private centralBankLocation: string, port: number, hostname: string){
         this.app.get("/parameters/spot_price", (_, res) => {
             res.send(this.getSpotPriceHistory());
         });
 
         this.wss.on('connection', async (ws, _) => {
             this.socket = ws;
-            this.send = (message: string) => {
-                this.socket.send(JSON.stringify(message))
+            this.send = (message: object) => {
+                let mesStr = JSON.stringify(message)
+                console.log("send: " + mesStr)                
+                this.socket.send(mesStr)
             }
 
             ws.on('message', (message: string) => {
+                console.log("recieve: " + message)
                 this.promiseFulfil(JSON.parse(message));
             });
             
@@ -63,7 +66,7 @@ class Server{
             }
         })
 
-        this.server.listen(port, () => {
+        this.server.listen(port, hostname, () => {
             console.log('Listening on %d', this.server.address().port);
         });
     }
@@ -154,11 +157,12 @@ function main(){
     commander
         .version("0.0.1")
         .option("--central-bank <location>", "The location of the central bank")
-        .option("--account-id <id>", "The id of of the banks account", parseInt)
-        .option("--port <port>", "The port to serve the requests over", parseInt, 80)
+        .option("--account-id <id>", "The id of of the banks account", parseInt, 1)
+        .option("--port <port>", "The port to serve the requests over", parseInt, 8080)
+        .option("--hostname <name>", "The hostname to serve the request over", "127.0.0.1")
         .parse(process.argv)
     
-    new Server(commander.accountId, commander.centralBank, commander.port);
+    new Server(commander.accountId, commander.centralBank, commander.port, commander.hostname);
 }
 
 

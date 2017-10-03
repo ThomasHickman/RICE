@@ -1,4 +1,5 @@
-import {SpotpriceHandler, SpotpriceTask} from "../src/spot_price_logic";
+import SpotpriceTask from "../src/SpotpriceTask";
+import SpotpriceHandler from "../src/SpotpriceHandler";
 import {PythonDockerTask} from "../src/tasks";
 
 describe("task spawning", () => {

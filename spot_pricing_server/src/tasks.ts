@@ -1,5 +1,6 @@
 import {SyncEvent} from 'ts-events';
 import cp = require("child_process");
+var stringArgv = require('string-argv');
 
 export abstract class Task<Output>{
     onTaskFinished = new SyncEvent<Output>();
@@ -25,7 +26,7 @@ export class PythonDockerTask extends Task<CommandLineOutput>{
 
     start(){
         const args = `run python ${this.command}`;
-        this.process = cp.spawn("docker", args.split(" "));
+        this.process = cp.spawn("docker", stringArgv(args));
 
         this.process.stdout.on("data", data => {
             this.stdoutBuffer += data;

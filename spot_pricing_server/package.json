@@ -31,6 +31,7 @@
     "node-fetch": "^1.7.3",
     "request": "^2.83.0",
     "sleep-promise": "^2.0.0",
+    "string-argv": "0.0.2",
     "ts-events": "^3.2.0",
     "ws": "^3.2.0"
   },

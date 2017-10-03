@@ -1,7 +1,7 @@
 import _ = require("lodash");
 import SpotpriceTask from "./SpotpriceTask"
 
-export class SpotpriceHandler {
+export default class SpotpriceHandler {
     private tasksRunning = <SpotpriceTask<any>[]>[];
     private tasksQueued = <SpotpriceTask<any>[]>[];
     private spotPrice: number;

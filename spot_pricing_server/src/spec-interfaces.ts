@@ -1,7 +1,3 @@
-export interface Resource{
-    // TODO: this
-}
-
 export interface JobVariables {
     waiting_time: number;
     running_time: number;
@@ -29,5 +25,6 @@ export interface Resource{
 export interface JobRequest<Params>{
     resource: Resource;
     bid_price: number;
-    script_parameters: Params
+    script_parameters: Params;
+    user_account: number;
 }
