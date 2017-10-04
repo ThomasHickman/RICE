@@ -28,3 +28,12 @@ export interface JobRequest<Params>{
     script_parameters: Params;
     user_account: number;
 }
+
+export interface BankError{
+    status: string;
+    error_message: string;
+}
+
+export type BankResponse = BankError | {
+    status: "ok"
+}

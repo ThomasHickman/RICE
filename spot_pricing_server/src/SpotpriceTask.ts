@@ -5,7 +5,7 @@ export default class SpotpriceTask<TaskOutput>{
     public onTaskStart = new SyncEvent<void>();
     public onTaskTerminated = new SyncEvent<void>();
     // This is only emitted for user terminated tasks
-    public onTaskFinished = new SyncEvent<TaskOutput>();
+    public onTaskFinished = new SyncEvent<TaskOutput | undefined>();
     
     /** The cost since the last spot price change */
     private cost = 0;
@@ -23,7 +23,7 @@ export default class SpotpriceTask<TaskOutput>{
     }
 
     /**
-     * Returns the current spot price cost and 
+     * Returns the current spot price cost and resets it to 0
      */
     popCost(){
         this.changeSpotPrice(this.currSpotPrice);
@@ -55,5 +55,10 @@ export default class SpotpriceTask<TaskOutput>{
     terminate(){
         this.task.terminate();
         this.onTaskTerminated.post();
+    }
+
+    userTerminate(){
+        this.task.terminate();
+        this.onTaskFinished.post(undefined);
     }
 }

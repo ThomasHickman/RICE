@@ -3,34 +3,26 @@ import express = require("express");
 import WebSocket = require("ws");
 import http = require("http");
 var expParse = require("expression-parser");
-var fetch = require("node-fetch");
-import commander = require("commander");
+import fetch from "node-fetch";
+import {ArgumentParser} from "argparse";
 
 import {PythonDockerTask} from "./tasks";
 import Transaction from "./Transaction";
 import SpotpriceTask from "./SpotpriceTask";
 import SpotpriceHandler from "./SpotpriceHandler";
-import {JobRequest, JobVariables} from "./spec-interfaces";
+import {JobRequest, JobVariables, BankError} from "./spec-interfaces";
 
 function sterilizeObject(ob: object){
     return _.extend(Object.create(null, {}), ob);
 }
 
 class Server{
-    private socket: WebSocket;
-    private promiseFulfil: (m: any) => void;
-    private send: typeof WebSocket.prototype.send;
-    private receive<ob>(){
-        return new Promise<ob>((fulfil, _) => {
-            this.promiseFulfil = fulfil;
-        })
-    }
     private app = express();
     private server = http.createServer(this.app);
     private wss = new WebSocket.Server({server: this.server});
     private spotPriceHistory = [1.2, 1.4, 1.6, 1.2, 1.5, 1.7];
 
-    private spHandler = new SpotpriceHandler(7);
+    private spHandler = new SpotpriceHandler(2);
 
     private getSpotPriceHistory(){
         return this.spotPriceHistory; // TODO: do something better here
@@ -42,28 +34,7 @@ class Server{
         });
 
         this.wss.on('connection', async (ws, _) => {
-            this.socket = ws;
-            this.send = (message: object) => {
-                let mesStr = JSON.stringify(message)
-                console.log("send: " + mesStr)                
-                this.socket.send(mesStr)
-            }
-
-            ws.on('message', (message: string) => {
-                console.log("recieve: " + message)
-                this.promiseFulfil(JSON.parse(message));
-            });
-            
-            try{
-                await this.onWebsocketConnect();
-            }
-            catch(e){
-                this.send({
-                    status: "error",
-                    data: e
-                })
-                ws.close();
-            }
+            new WebsocketConnection(ws, this.chargeUser.bind(this), this.spHandler);
         })
 
         this.server.listen(port, hostname, () => {
@@ -71,7 +42,13 @@ class Server{
         });
     }
 
-    private async chargeUser(req: JobRequest<any>, jobVars: JobVariables){
+    /**
+     * 
+     * @param req 
+     * @param jobVars 
+     * @returns Whether the user has been successfully charged
+     */
+    private async chargeUser(req: JobRequest<any>, jobVars: JobVariables) {
         var costFunc = expParse(req.resource.cost);
         // Need to sterilize to make sure you don't access prototype etc.
         // TODO: Introduce if statements and use a different library
@@ -90,79 +67,189 @@ class Server{
             })
         })
 
-        // TODO: maybe do something with the transaction?
+        return <BankError>await transaction.json();
+    }
+}
+
+class WebsocketConnection{
+    private socketEnded = false;
+    
+    private send(message: object) {
+        if(!this.socketEnded){
+            let mesStr = JSON.stringify(message)
+            console.log("send: " + mesStr)
+            this.socket.send(mesStr)
+        }
+    }
+    private promiseFulfil: (m: any) => void;
+    private receive<ob>(){
+        return new Promise<ob>((fulfil, _) => {
+            this.promiseFulfil = fulfil;
+        })
     }
 
-    private taskTimeout = 3000;
+    private readonly taskTimeout = 3000;
+    private request: JobRequest<any>;
+    private transaction: Transaction;
+    private timesBought = 1;
+    private spTask: SpotpriceTask<any>;
+    private timeout: NodeJS.Timer;
+    
+    private verifyRequest(req: JobRequest<any>){
+        if(req.bid_price < 0){
+            throw Error("Cannot have a bid price of less than 0");
+        }
 
-    private async onWebsocketConnect(){
-        let request = await this.receive<JobRequest<any>>();
-        // TODO: verify this
-        this.send({
-            "status": "submitted"
-        })
+        // TODO: the rest
+    }
 
-        let spTask = new SpotpriceTask(new PythonDockerTask(request.script_parameters.command), request.bid_price);
-        this.spHandler.addTask(spTask);
-        let transaction = new Transaction();
-        let timesBought = 1;
+    constructor(private socket: WebSocket,
+                private chargeUser: (req: JobRequest<any>, jobVars: JobVariables) => Promise<BankError>,
+                private spHandler: SpotpriceHandler){
+        socket.on('message', (message: string) => {
+            console.log("receive: " + message)
+            this.promiseFulfil(JSON.parse(message));
+        });
 
-        let taskContinue = () => {
-            this.chargeUser(request, 
-                transaction.getFinishedJobVars("none", spTask.popCost(), timesBought));
-            transaction = new Transaction();
+        (async () => {
+            try{
+                await this.onWebsocketConnect();
+            }
+            catch(e){
+                this.send({
+                    status: "error",
+                    data: e.toString()
+                })
+                this.socket.close();
+            }
+    
+            this.socket.on("close", () => {
+                this.socketEnded = true;
+                if(this.spTask != undefined){
+                    this.spTask.terminate();
+                }
+                console.log("User terminated")
+            });
+        })()
+    }
+
+    private async onTaskContinue(){
+        let chargedStatus = await this.chargeUser(this.request, 
+            this.transaction.getFinishedJobVars("none", this.spTask.popCost(), this.timesBought));
+
+        if(chargedStatus.status == "ok"){
+            this.transaction = new Transaction();
             this.send({
                 "status": "task-continued"
             });
             
-            timesBought++;
-        }
-        let timeout = setTimeout(() => taskContinue(), this.taskTimeout)
+            this.timesBought++;
 
-        spTask.onTaskFinished.attach(output => {
+            this.timeout = setTimeout(() => this.onTaskContinue(), this.taskTimeout)
+        }
+        else{
+            this.send({
+                "status": "charging-error",
+                "error": chargedStatus
+            })
+
+            this.spTask.terminate();
+        }
+    }
+
+    private async onTaskFinished(output: any){
+        if(this.timeout != undefined)
+            clearTimeout(this.timeout);
+        
+        let chargedStatus = await this.chargeUser(this.request, 
+            this.transaction.getFinishedJobVars("user", this.spTask.popCost(), this.timesBought));
+        
+        if(chargedStatus.status == "ok"){
             this.send({
                 status: "task-finished",
                 output
             });
-
-            this.chargeUser(request, 
-                transaction.getFinishedJobVars("user", spTask.popCost(), timesBought));
-            clearTimeout(timeout);
-
-            this.socket.close();
-        })
-
-        spTask.onTaskStart.attach(() => {
+        }
+        else{
             this.send({
-                status: "task-start"
-            });
+                "status": "charging-error",
+                "error": chargedStatus
+            })
+        }
 
-            transaction.onProcessStart();
+        this.socket.close();
+    }
+
+    private onTaskTerminated(){
+        clearTimeout(this.timeout);
+        this.send({
+            status: "task-terminated"
+        });
+
+        this.socket.close();
+    }
+
+    private onTaskStart(){
+        this.send({
+            status: "task-start"
+        });
+
+        this.timeout = setTimeout(() => this.onTaskContinue(), this.taskTimeout);
+
+        this.transaction.onProcessStart();
+    }
+
+    private async onWebsocketConnect(){
+        this.request = await this.receive<JobRequest<any>>();
+        this.verifyRequest(this.request);
+        
+        this.send({
+            "status": "submitted"
+        });
+        
+        this.spTask = new SpotpriceTask(new PythonDockerTask(this.request.script_parameters.command), this.request.bid_price);
+
+        this.spTask.onTaskFinished.attach(async output => {
+            this.onTaskFinished(output);
         })
 
-        spTask.onTaskTerminated.attach(() => {
-            this.send({
-                status: "task-terminated"
-            });
-
-            this.chargeUser(request, 
-                transaction.getFinishedJobVars("provider", spTask.popCost(), timesBought));
-
-            this.socket.close();
+        this.spTask.onTaskStart.attach(() => {
+            this.onTaskStart();
         })
+
+        this.spTask.onTaskTerminated.attach(async () => {
+            this.onTaskTerminated();
+        })
+
+        this.transaction = new Transaction();
+        this.spHandler.addTask(this.spTask);
     }
 }
 
 function main(){
-    commander
-        .version("0.0.1")
-        .option("--central-bank <location>", "The location of the central bank")
-        .option("--account-id <id>", "The id of of the banks account", parseInt, 1)
-        .option("--port <port>", "The port to serve the requests over", parseInt, 8080)
-        .option("--hostname <name>", "The hostname to serve the request over", "127.0.0.1")
-        .parse(process.argv)
+    var parser = new ArgumentParser({description: "A test spot pricing server"});
+    parser.addArgument(["--central_bank"], {
+        help: "The location of the central bank",
+        required: true
+    })
+    parser.addArgument(["--account_id"], {
+        help: "The id of of the banks account",
+        required: true,
+        type: "int"
+    })
+    parser.addArgument(["--port"], {
+        help: "The port to serve the requests over",
+        required: true,
+        type: "int"
+    })
+    parser.addArgument(["--host"], {
+        help: "The hostname to serve the request over",
+        required: true
+    })
+
+    var args = parser.parseArgs();
     
-    new Server(commander.accountId, commander.centralBank, commander.port, commander.hostname);
+    new Server(args.account_id, args.central_bank, args.port, args.host);
 }
 
 

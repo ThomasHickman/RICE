@@ -25,6 +25,11 @@ class Provider(Base):
     def __init__(self, address):
         self.address = address
 
+    def get_json(self):
+        return {
+            "address": self.address
+        }
+
 
 class DiscoveryService:
     def __init__(self):
@@ -48,7 +53,7 @@ class DiscoveryService:
 
     def getAll(self):
         with self.session_scope() as session:
-            return list(session.query(Provider).all())
+            return [provider.get_json() for provider in session.query(Provider).all()]
 
     def add_service(self, address):
         with self.session_scope() as session:

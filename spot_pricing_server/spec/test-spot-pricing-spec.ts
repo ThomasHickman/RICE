@@ -3,24 +3,27 @@ import SpotpriceHandler from "../src/SpotpriceHandler";
 import {PythonDockerTask} from "../src/tasks";
 
 describe("task spawning", () => {
-    function createTask(cost: number): [SpotpriceTask<any>, jasmine.Spy] {
+    function createTask(cost: number): [SpotpriceTask<any>, jasmine.Spy, jasmine.Spy] {
         let spTask = new SpotpriceTask(task, cost);
-        let spy = jasmine.createSpy("onTaskStart");
-        spTask.onTaskStart.attach(spy);
+        let taskStartedSpy = jasmine.createSpy("onTaskStart");
+        spTask.onTaskStart.attach(taskStartedSpy);
+        let taskTerminatedSpy = jasmine.createSpy("onTaskTerminated");
+        spTask.onTaskTerminated.attach(taskTerminatedSpy);
         spHandler.addTask(spTask);
 
-        return [spTask, spy];
+        return [spTask, taskStartedSpy, taskTerminatedSpy];
     }
 
     const task = new PythonDockerTask("python -c 'while True: pass'");
     let spHandler: SpotpriceHandler;
     let task1: SpotpriceTask<any>, task2: SpotpriceTask<any>;
     let taskStarted1: jasmine.Spy, taskStarted2: jasmine.Spy;
+    let taskTerminated1: jasmine.Spy, taskTerminated2: jasmine.Spy;
 
     beforeEach(() => {
         spHandler = new SpotpriceHandler(1);
-        [task1, taskStarted1] = createTask(10);
-        [task2, taskStarted2] = createTask(5);
+        [task1, taskStarted1, taskTerminated1] = createTask(10);
+        [task2, taskStarted2, taskTerminated2] = createTask(5);
     })
 
     it("maintains correct starting order", function () {
@@ -38,8 +41,9 @@ describe("task spawning", () => {
         expect(taskStarted2).toHaveBeenCalled();
     })
 
-    it("schedules tasks when terminated", function () {
+    it("queues tasks of higher priority", function () {
         let taskStarted3 = createTask(20)[1];
         expect(taskStarted3).toHaveBeenCalled();
+        expect(taskTerminated1).toHaveBeenCalled();
     })
 })

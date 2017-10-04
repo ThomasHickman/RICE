@@ -19,6 +19,7 @@ export class PythonDockerTask extends Task<CommandLineOutput>{
     private process: cp.ChildProcess | undefined;
     private stdoutBuffer = "";
     private stderrBuffer = "";
+    private terminated = false;
 
     constructor(private command: string){
         super()
@@ -37,11 +38,13 @@ export class PythonDockerTask extends Task<CommandLineOutput>{
         })
 
         this.process.on("close", exitCode => {
-            this.onTaskFinished.post({
-                exitCode: exitCode,
-                stdout: this.stdoutBuffer,
-                stderr: this.stderrBuffer
-            })
+            if(exitCode != null){
+                this.onTaskFinished.post({
+                    exitCode: exitCode,
+                    stdout: this.stdoutBuffer,
+                    stderr: this.stderrBuffer
+                })
+            }
         })
     }
 
@@ -49,7 +52,7 @@ export class PythonDockerTask extends Task<CommandLineOutput>{
         if (this.process == undefined){
             throw Error("terminate: cannot terminate non running process")
         }
-        
+
         this.process.kill();
     }
 }

@@ -105,7 +105,8 @@ class Bank:
 
     def _alter_account(self, account_id, amount, session):
         account = session.query(Account).filter_by(id=account_id).first() # type: Account
-        error_mes = f"Account '{account_id}' doesn't exist"
+        if account is None:
+            raise InvalidAccountUUID(account_id)
 
         if account.balance + amount < 0:
             raise InsufficientFunds()
@@ -128,6 +129,16 @@ class Bank:
             session.add(new_account)
             session.flush()
             return new_account.id
+
+    def get_account_details(self, account_id):
+        with self.session_scope() as session:
+            account = session.query(Account).filter_by(id=account_id).first() # type: Account
+            if account is None:
+                raise InvalidAccountUUID(account_id)
+
+            return {
+                "balance": account.balance
+            }
 
     def get_transaction(self, record_id):
         with self.session_scope() as session:
@@ -166,10 +177,22 @@ def get_transaction(record_id):
         return e.get_response()
 
 
+@app.route("/accounts/<account_id>")
+def get_account(account_id):
+    try:
+        return jsonify({
+            "status": "ok",
+            "response": bank.get_account_details(account_id)
+        })
+    except BankError as e:
+        return e.get_response()
+
+
 @app.route("/transfer", methods=["POST"])
 def transfer():
     try:
         req = request.get_json()
+        print(req)
         validate(req, transfer_schema)
         req_id = bank.transfer(
             req["from"],
