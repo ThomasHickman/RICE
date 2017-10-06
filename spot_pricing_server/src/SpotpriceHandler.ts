@@ -36,7 +36,7 @@ export default class SpotpriceHandler {
             this.startTask(spTask);
         }
         else {
-            bottom_task = _.minBy(this.tasksRunning, (t) => t.bidPrice);
+            bottom_task = _.minBy(this.tasksRunning, task => [task.bidPrice, -task.timeStarted]);
             if (bottom_task !== undefined && bottom_task.bidPrice < spTask.bidPrice) {
                 _.remove(this.tasksRunning, bottom_task);
                 bottom_task.terminate();
@@ -54,7 +54,7 @@ export default class SpotpriceHandler {
      */
     private moveOverTasks(){
         if (this.maxTasks > this.tasksRunning.length) {
-            _.sortBy(this.tasksQueued, "bid_price")
+            _.sortBy(this.tasksQueued, task => [task.bidPrice, task.timeQueued])
             const newElements = this.maxTasks - this.tasksRunning.length;
 
             for(let i = 0;i < newElements;i++) {
@@ -68,12 +68,12 @@ export default class SpotpriceHandler {
             }
         }
         else if (this.maxTasks < this.tasksRunning.length) {
-            _.sortBy(this.tasksRunning, "bid_price");
+            _.sortBy(this.tasksRunning, task => [task.bidPrice, -task.timeStarted]);
             let elementsToRemove = this.tasksRunning.length - this.maxTasks;
 
             for (let i = 0; i < elementsToRemove; i++) {
-                const new_task = this.tasksRunning.pop() as SpotpriceTask<any>; // This is always going to return something
-                new_task.terminate();
+                const newTask = this.tasksRunning.pop() as SpotpriceTask<any>; // This is always going to return something
+                newTask.terminate();
             }
             this.recalculateSpotPrice();
         }

@@ -13,11 +13,15 @@ export default class SpotpriceTask<TaskOutput>{
     private lastSpotPriceChangeTime: number | undefined;
     private currSpotPrice = 0;
     
-    constructor(private task: Task<TaskOutput>, public bidPrice: number){
+    constructor(private task: Task<TaskOutput>,
+                public bidPrice: number,
+                public timeStarted: number,
+                public timeQueued = Date.now()){
         this.task.onTaskFinished.attach(x => this.onTaskFinished.post(x));
     }
 
     start(){
+        this.timeStarted = Date.now();
         this.task.start();
         this.onTaskStart.post();
     }
